@@ -6,3 +6,64 @@
     <p>This site, created by Emma Wuerthner for her Environmental Sustainability and Engineering Academy Capstone project, will allow you to calculate the distance between your arrival and departure airports and find the six least emitting airplanes you can take (including the emissions values)! Start below.</p>
   </body>
 </html>
+
+import pandas as pd
+from haversine import haversine, Unit
+
+# Load datasets
+airports_df = pd.read_csv('airports.csv')
+airplanes_df = pd.read_csv('airplanes.csv')
+
+# Get user input
+iata1_code = input("Please enter your departure IATA code: ").strip().upper()
+iata2_code = input("Please enter your arrival IATA code: ").strip().upper()
+
+# Lookup rows for both IATA codes
+iata1_row = airports_df.loc[airports_df['IATA'] == iata1_code]
+iata2_row = airports_df.loc[airports_df['IATA'] == iata2_code]
+
+# Check if either airport is missing
+if iata1_row.empty:
+    print(f"IATA code '{iata1_code}' not found in dataset.")
+elif iata2_row.empty:
+    print(f"IATA code '{iata2_code}' not found in dataset.")
+else:
+    # Extract lat/lon as tuples
+    lat1, lon1 = iata1_row.iloc[0]['Latitude'], iata1_row.iloc[0]['Longitude']
+    lat2, lon2 = iata2_row.iloc[0]['Latitude'], iata2_row.iloc[0]['Longitude']
+    coords1 = (lat1, lon1)
+    coords2 = (lat2, lon2)
+
+    # Calculate distance
+    dist = haversine(coords1, coords2, unit=Unit.KILOMETERS)
+    print(f"\nThe distance between {iata1_code} and {iata2_code} is {dist:.2f} kilometers.\n")
+
+    # Ensure emissions column is numeric
+    airplanes_df['emissions per person per km in g'] = pd.to_numeric(
+        airplanes_df['emissions per person per km in g'], errors='coerce'
+    )
+
+    # Drop rows with invalid emissions
+    airplanes_df = airplanes_df.dropna(subset=['emissions per person per km in g'])
+
+    # Calculate total emissions per person
+    airplanes_df['total emissions (g per person)'] = airplanes_df['emissions per person per km in g'] * dist
+
+    # DEBUG: Check if any data remains
+    if airplanes_df.empty:
+        print("No valid airplane emissions data found after filtering.")
+    else:
+        # Get top 6 airplanes with lowest total emissions
+        top6_airplanes = airplanes_df.nsmallest(6, 'total emissions (g per person)')
+
+        # Output results
+        print("\nAirplanes with the lowest total emissions per person for your flight:")
+        for index, row in top6_airplanes.iterrows():
+            # Handle column name case-sensitivity
+            plane_col = 'plane' if 'plane' in row else 'Plane' if 'Plane' in row else None
+            if plane_col:
+                plane = row[plane_col]
+                total_emissions = row['total emissions (g per person)']
+                print(f"- {plane}: {total_emissions:,.2f} grams")
+            else:
+                print("- [Plane name missing]: Data column not found.")
